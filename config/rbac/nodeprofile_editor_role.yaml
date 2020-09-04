@@ -1,0 +1,24 @@
+# permissions for end users to edit nodeprofiles.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nodeprofile-editor-role
+rules:
+- apiGroups:
+  - nodeprofile.intel.com
+  resources:
+  - nodeprofiles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - nodeprofile.intel.com
+  resources:
+  - nodeprofiles/status
+  verbs:
+  - get

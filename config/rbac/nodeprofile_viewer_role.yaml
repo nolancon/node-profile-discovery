@@ -1,0 +1,20 @@
+# permissions for end users to view nodeprofiles.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nodeprofile-viewer-role
+rules:
+- apiGroups:
+  - nodeprofile.intel.com
+  resources:
+  - nodeprofiles
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nodeprofile.intel.com
+  resources:
+  - nodeprofiles/status
+  verbs:
+  - get

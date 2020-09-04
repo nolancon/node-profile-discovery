@@ -1,0 +1,11 @@
+apiVersion: nodeprofile.intel.com/v1alpha1
+kind: NodeProfile
+metadata:
+  name: nodeprofile-sample
+spec:
+  # Add fields here
+  labels:
+    required:
+      required1: "ok"
+    preferred:
+      preferred1: "ok1"    
