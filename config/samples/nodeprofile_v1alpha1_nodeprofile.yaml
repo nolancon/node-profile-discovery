@@ -6,6 +6,7 @@ spec:
   # Add fields here
   labels:
     required:
-      required1: "ok"
+      kubernetes.io/os: "linux"
     preferred:
-      preferred1: "ok1"    
+      kubernetes.io/hostname: "silpixa00399884"
+

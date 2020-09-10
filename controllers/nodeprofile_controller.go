@@ -38,6 +38,12 @@ type NodeProfileReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+const (
+	nodeProfileLabelConst = "profile.node.kubernetes.io/"
+	bestEffort            = "best-effort"
+	strict                = "strict"
+)
+
 // +kubebuilder:rbac:groups=nodeprofile.intel.com,resources=nodeprofiles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=nodeprofile.intel.com,resources=nodeprofiles/status,verbs=get;update;patch
 
@@ -63,13 +69,13 @@ func (r *NodeProfileReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 	err = r.Get(ctx, req.NamespacedName, nodeProfile)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// NodeProfile may have been deleted, in which case corresponding profile labels need
-			// to be removed from Nodes.
+			// NodeProfile may have been deleted, in which case corresponding
+			// Node Profile Labels need to be removed from Nodes.
 			for _, node := range nodeList.Items {
-				profileLabelKey := fmt.Sprintf("%v%v", "profile.node.kubernetes.io/", req.NamespacedName.Name)
+				profileLabelKey := fmt.Sprintf("%v%v", nodeProfileLabelConst, req.NamespacedName.Name)
 				nodeLabels := labels.Set(node.GetObjectMeta().GetLabels())
 				if nodeLabels.Has(profileLabelKey) {
-					// Remove node profile label from node
+					// Remove Node Profile Label from Node
 					nodeLabelsMap := map[string]string(nodeLabels)
 					delete(nodeLabelsMap, profileLabelKey)
 					updatedNodeLabels := labels.Set(nodeLabelsMap)
@@ -86,32 +92,71 @@ func (r *NodeProfileReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 		return ctrl.Result{}, err
 	}
 
+	if len(nodeProfile.Spec.Labels.Required) == 0 {
+		return ctrl.Result{}, nil
+	}
+
+	profileLabelKey := fmt.Sprintf("%v%v", "profile.node/", nodeProfile.GetObjectMeta().GetName())
+
 	for _, node := range nodeList.Items {
 		nodeLabels := labels.Set(node.GetObjectMeta().GetLabels())
-		logger.Info("Node and profile (required) labels", "nodeLabels", nodeLabels, "required labels", nodeProfile.Spec.Labels.Required)
 
+		// Required Labels: check Node Profile 'required' Labels vs Node Feature Labels.
+		// If all 'required' Labels do NOT exist on the Node, ignore this Node and continue.
 		if !labels.AreLabelsInWhiteList(labels.Set(nodeProfile.Spec.Labels.Required), nodeLabels) {
 			logger.Info("Node does not fit profile for <required> labels")
+			// Remove Node Profile Label if it already exists
+			if nodeLabels.Has(profileLabelKey) {
+				nodeLabelsMap := map[string]string(nodeLabels)
+				delete(nodeLabelsMap, profileLabelKey)
+				updatedNodeLabels := labels.Set(nodeLabelsMap)
+				node.GetObjectMeta().SetLabels(updatedNodeLabels)
+				err := r.Update(ctx, &node)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				logger.Info("Node Profile label removed successfully", "Node", node.GetObjectMeta().GetName())
+				// Remove Node from Node Profile Status
+				delete(nodeProfile.Status.Nodes, node.GetObjectMeta().GetName())
+				err = r.Status().Update(ctx, nodeProfile)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+			}
 			continue
 		}
 
-		logger.Info("Node contains all <required> labels. Create 'best-effort' profile label...")
-
-		// Create best-effort label
-		profileLabelKey := fmt.Sprintf("%v%v", "profile.node/", nodeProfile.GetObjectMeta().GetName())
+		// Now we know this Node contains all 'required' Labels, so we create a placeholder
+		// 'best-effort' Node Profile Label. This is not yet applied to the Node.
+		// Note: 'best-effort' Node Profile Label = (all required Labels) + (some or none of
+		// preferred labels)
+		logger.Info("Node contains all required labels. Create 'best-effort' profile label...")
 		profileLabel := labels.Set{
-			profileLabelKey: "best-effort",
+			profileLabelKey: bestEffort,
 		}
+		// Also add Node to NodeProfile Status
+		if len(nodeProfile.Status.Nodes) == 0 {
+			nodeMap := make(map[string]string)
+			nodeProfile.Status.Nodes = nodeMap
+		}
+		nodeProfile.Status.Nodes[node.GetObjectMeta().GetName()] = bestEffort
 
+		// Preferred Labels: check Node Profile 'preferred' Labels vs Node Feature Labels.
+		// If all 'preferred' Labels DO exist on the Node, upgrade placeholder Node Profile
+		// Label to 'strict'.
+		// Note: 'strict' Node Profile Label = (all required Labels) + (all preferred Labels)
 		if labels.AreLabelsInWhiteList(labels.Set(nodeProfile.Spec.Labels.Preferred), nodeLabels) {
-			logger.Info("Node also contains all <preferred> labels. Update profile label to 'strict'...")
+			logger.Info("Node also contains all preferred labels. Upgrade profile label to 'strict'...")
 			profileLabel = labels.Set{
-				profileLabelKey: "strict",
+				profileLabelKey: strict,
 			}
+			// Also add Node to NodeProfile Status
+			nodeProfile.Status.Nodes[node.GetObjectMeta().GetName()] = strict
 		}
 
-		// Update node labels with profile label if it does not already exist OR if it has a different value
-		if nodeLabels.Get(profileLabelKey) == "" || labels.Conflicts(profileLabel, nodeLabels) {
+		// Apply the placeholder Node Profile Label to the Node if:
+		// 1. Label does not already exist on the Node.
+		if !nodeLabels.Has(profileLabelKey) {
 			logger.Info("Apply profile label to node...")
 			updatedLabels := labels.Merge(nodeLabels, profileLabel)
 			node.GetObjectMeta().SetLabels(updatedLabels)
@@ -120,9 +165,30 @@ func (r *NodeProfileReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error)
 				return ctrl.Result{}, err
 			}
 		}
+		// 2. Label exists, but has a conflicting value (eg Label needs to
+		// be changed from 'best-efort' to 'strict')
+		if labels.Conflicts(profileLabel, nodeLabels) {
+			// Remove conflicting label and Update.
+			nodeLabelsMap := map[string]string(nodeLabels)
+			delete(nodeLabelsMap, profileLabelKey)
+			nodeLabels := labels.Set(nodeLabelsMap)
+			updatedNodeLabels := labels.Merge(nodeLabels, profileLabel)
+			node.GetObjectMeta().SetLabels(updatedNodeLabels)
+			err := r.Update(ctx, &node)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+
+		}
+
+		// Update Node Profile Status with Node
+		err := r.Status().Update(ctx, nodeProfile)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	logger.Info("NodeProfile Reconciled.")
-	// Requeue after n seconds (stnadard NFD interval in 60 seconds
+	// Requeue after n seconds (standard NFD interval in 60 seconds)
 	return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 }
 

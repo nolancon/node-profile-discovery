@@ -22,11 +22,10 @@ import (
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-type Labels map[string]string
 
 type NodeLabels struct {
-	Required  Labels `json:"required,omitempty"`
-	Preferred Labels `json:"preferred,omitempty"`
+	Required  map[string]string `json:"required,omitempty"`
+	Preferred map[string]string `json:"preferred,omitempty"`
 }
 
 // NodeProfileSpec defines the desired state of NodeProfile
@@ -42,7 +41,7 @@ type NodeProfileSpec struct {
 type NodeProfileStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	NodeNames []string `json:"nodeNames,omitempty"`
+	Nodes map[string]string `json:"nodeNames,omitempty"`
 }
 
 // +kubebuilder:object:root=true

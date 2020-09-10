@@ -43,31 +43,25 @@ spec:
                 preferred:
                   additionalProperties:
                     type: string
-                  description: 'EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-                    NOTE: json tags are required.  Any new fields you add must have
-                    json tags for the fields to be serialized.'
                   type: object
                 required:
                   additionalProperties:
                     type: string
-                  description: 'EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-                    NOTE: json tags are required.  Any new fields you add must have
-                    json tags for the fields to be serialized.'
                   type: object
               required:
-              - required 
+              - required  
               type: object
           type: object
         status:
           description: NodeProfileStatus defines the observed state of NodeProfile
           properties:
             nodeNames:
+              additionalProperties:
+                type: string
               description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
                 of cluster Important: Run "make" to regenerate code after modifying
                 this file'
-              items:
-                type: string
-              type: array
+              type: object
           type: object
       type: object
   version: v1alpha1
